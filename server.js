@@ -1,17 +1,21 @@
 const express = require('express');
+const session = require('express-session');
 const app = express();
 
-// Middlewares
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Middleware pour logger les requêtes
+app.use(session({
+    secret: 'votre_secret_key',
+    resave: false,
+    saveUninitialized: true
+}));
+
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     next();
 });
 
-// Middleware CORS
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
@@ -19,7 +23,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// Simulation bases de données
 let users = [
     { id: 1, name: 'User 1', email: 'user1@example.com' },
     { id: 2, name: 'User 2', email: 'user2@example.com' }
@@ -31,22 +34,69 @@ let products = [
     { id: 3, name: "Produit 3", price: 49.99, stock: 8 }
 ];
 
-let carts = new Map(); // Stockage des paniers par userId
+let admins = [
+    { id: 1, email: 'admin@example.com', password: 'admin123', isAdmin: true }
+];
 
-// ROUTES UTILISATEURS
-// GET - Récupérer tous les utilisateurs
+let carts = new Map(); 
+
+app.post('/admin/login', (req, res) => {
+    const { email, password } = req.body;
+    const admin = admins.find(a => a.email === email && a.password === password);
+    if (!admin) {
+        return res.status(401).json({ message: 'Accès non autorisé' });
+    }
+    req.session.isAdmin = true;
+    res.json({ message: 'Connexion admin réussie' });
+});
+
+app.get('/admin/products', (req, res) => {
+    res.json(products);
+});
+
+app.post('/admin/products', (req, res) => {
+    const { name, price, stock } = req.body;
+    const newProduct = {
+        id: products.length + 1,
+        name,
+        price,
+        stock
+    };
+    products.push(newProduct);
+    res.status(201).json(newProduct);
+});
+
+app.put('/admin/products/:id', (req, res) => {
+    const product = products.find(p => p.id === parseInt(req.params.id));
+    if (!product) {
+        return res.status(404).json({ message: 'Produit non trouvé' });
+    }
+    const { name, price, stock } = req.body;
+    if (name) product.name = name;
+    if (price) product.price = price;
+    if (stock !== undefined) product.stock = stock;
+    res.json(product);
+});
+
+app.delete('/admin/products/:id', (req, res) => {
+    const index = products.findIndex(p => p.id === parseInt(req.params.id));
+    if (index === -1) {
+        return res.status(404).json({ message: 'Produit non trouvé' });
+    }
+    products.splice(index, 1);
+    res.json({ message: 'Produit supprimé' });
+});
+
 app.get('/api/users', (req, res) => {
     res.json(users);
 });
 
-// GET - Récupérer un utilisateur par ID
 app.get('/api/users/:id', (req, res) => {
     const user = users.find(u => u.id === parseInt(req.params.id));
     if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
     res.json(user);
 });
 
-// POST - Créer un nouvel utilisateur
 app.post('/api/users', (req, res) => {
     const { name, email } = req.body;
     
@@ -64,7 +114,6 @@ app.post('/api/users', (req, res) => {
     res.status(201).json(newUser);
 });
 
-// PUT - Mettre à jour un utilisateur
 app.put('/api/users/:id', (req, res) => {
     const user = users.find(u => u.id === parseInt(req.params.id));
     if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
@@ -76,7 +125,6 @@ app.put('/api/users/:id', (req, res) => {
     res.json(user);
 });
 
-// DELETE - Supprimer un utilisateur
 app.delete('/api/users/:id', (req, res) => {
     const userIndex = users.findIndex(u => u.id === parseInt(req.params.id));
     if (userIndex === -1) return res.status(404).json({ message: 'Utilisateur non trouvé' });
@@ -85,13 +133,12 @@ app.delete('/api/users/:id', (req, res) => {
     res.json({ message: 'Utilisateur supprimé avec succès' });
 });
 
-// ROUTES PRODUITS ET PANIER
-// Voir tous les produits
 app.get('/api/products', (req, res) => {
     res.json(products);
 });
 
-// Voir le panier d'un utilisateur
+
+
 app.get('/api/cart/:userId', (req, res) => {
     const userId = req.params.userId;
     if (!carts.has(userId)) {
@@ -107,7 +154,6 @@ app.get('/api/cart/:userId', (req, res) => {
     });
 });
 
-// Ajouter un produit au panier
 app.post('/api/cart/:userId/add', (req, res) => {
     const userId = req.params.userId;
     const { productId, quantity = 1 } = req.body;
@@ -151,7 +197,6 @@ app.post('/api/cart/:userId/add', (req, res) => {
     });
 });
 
-// Modifier la quantité d'un produit
 app.put('/api/cart/:userId/update', (req, res) => {
     const userId = req.params.userId;
     const { productId, quantity } = req.body;
@@ -183,7 +228,6 @@ app.put('/api/cart/:userId/update', (req, res) => {
     });
 });
 
-// Supprimer un produit du panier
 app.delete('/api/cart/:userId/remove/:productId', (req, res) => {
     const userId = req.params.userId;
     const productId = parseInt(req.params.productId);
@@ -211,7 +255,6 @@ app.delete('/api/cart/:userId/remove/:productId', (req, res) => {
     });
 });
 
-// Vider le panier
 app.delete('/api/cart/:userId/clear', (req, res) => {
     const userId = req.params.userId;
     
@@ -233,15 +276,12 @@ app.delete('/api/cart/:userId/clear', (req, res) => {
     });
 });
 
-// Middleware de gestion d'erreurs
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ message: 'Une erreur est survenue !' });
 });
 
-// Démarrage du serveur
 const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`Serveur démarré sur le port ${PORT}`);
 });
-
